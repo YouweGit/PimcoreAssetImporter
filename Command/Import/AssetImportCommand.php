@@ -42,7 +42,7 @@ class AssetImportCommand extends AbstractCommand
     {
         $this
             ->setName('youwe:import:assets')
-            ->setDescription('Import assets into Pimcore. Currently only supports directories and images. Original files are deleted.')
+            ->setDescription('Import assets into Pimcore.')
             ->addArgument(
                 'path',
                 InputOption::VALUE_REQUIRED,
@@ -61,7 +61,7 @@ class AssetImportCommand extends AbstractCommand
                 'batchSize',
                 null,
                 InputOption::VALUE_OPTIONAL,
-                'Enables batch import by setting the number of files to import each run. Automatically enables deleteOriginal option.',
+                'Enables batch import by setting the number of files to import each run.',
                 0
             )->addOption(
                 'deleteOriginal',
