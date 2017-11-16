@@ -1,0 +1,18 @@
+{
+  "name": "youwe/pimcore-asset-importer",
+  "description": "Pimcore asset importer",
+  "type": "pimcore-bundle",
+  "license": "proprietary",
+  "autoload": {
+    "psr-4": {
+      "Youwe\\PimcoreAssetImporterBundle\\": "/"
+    }
+  },
+  "extra": {
+    "pimcore": {
+      "bundles": [
+        "Youwe\\PimcoreAssetImporterBundle\\YouwePimcoreAssetImporterBundle"
+      ]
+    }
+  }
+}
