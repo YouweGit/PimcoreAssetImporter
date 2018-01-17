@@ -3,6 +3,7 @@
 namespace Youwe\PimcoreAssetImporterBundle\Command\Import;
 
 use Pimcore\Console\AbstractCommand;
+use Pimcore\File;
 use Pimcore\Model\Asset;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -182,7 +183,10 @@ class AssetImportCommand extends AbstractCommand
     protected function createAssetFromFile(SplFileInfo $file)
     {
         // If the asset already exists
-        $expectedPath = $this->rootFolderAsset->getFullPath() . '/' . $file->getRelativePathname();
+        $expectedPath = $this->rootFolderAsset->getFullPath() .
+            '/' . $file->getRelativePath() . '/' .
+            File::getValidFilename($file->getBasename());
+
         if (Asset\Service::pathExists($expectedPath)) {
 
             // Update file contents if enabled
@@ -190,9 +194,11 @@ class AssetImportCommand extends AbstractCommand
                 $asset = Asset::getByPath($expectedPath);
                 $asset->setData($file->getContents());
                 $asset->save();
+
+                $this->dump('Updating existing file "' . $expectedPath . '".');
+            } else {
+                $this->dump('NOT updating existing file "' . $expectedPath . '".');
             }
-            $this->deleteOriginalFile($file);
-            $this->dump('Updating existing file "' . $expectedPath . '".');
 
         // If asset doesn't exist yet
         } else {
@@ -206,15 +212,26 @@ class AssetImportCommand extends AbstractCommand
             $this->dump('Importing file "' . $file->getRelativePathname() . '" to ' .
                 $parentAsset->getFullPath() . '/' . $file->getBasename() . '.');
             Asset::create($parentAsset->getId(), [
-                'filename'   => $file->getBasename(),
+                'filename'   => File::getValidFilename($file->getBasename()),
                 'sourcePath' => $file->getPathname(),
                 'data'       => $file->getContents(),
             ], true);
-            $this->deleteOriginalFile($file);
         }
+        $this->deleteOriginalFile($file);
 
         $this->dump('Imported "' . $file->getRelativePathname() . '"');
         return true;
+    }
+
+    /**
+     * @param string $filename
+     * @return string
+     */
+    protected function fixInvalidDirectoryName($filename)
+    {
+        // Remove numeric duplicate indicator from directory name. For example: dirname (1)
+        $filename = preg_replace('/\([0-9]+\)/', '', $filename);
+        return File::getValidFilename($filename);
     }
 
     /**
