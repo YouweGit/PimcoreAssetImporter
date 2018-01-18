@@ -37,6 +37,11 @@ class AssetImportCommand extends AbstractCommand
     protected $deleteOriginal = false;
 
     /**
+     * @var array
+     */
+    protected $includeExcludeOptions = [];
+
+    /**
      * Configure asset import arguments and options
      */
     protected function configure()
@@ -69,6 +74,26 @@ class AssetImportCommand extends AbstractCommand
                 null,
                 InputOption::VALUE_NONE,
                 'Delete original file after successful import.'
+            )->addOption(
+                'includeTypes',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Comma separated list of allowed asset types. Will overrule excludeTypes. Available options: ' . implode(', ', Asset::getTypes())
+            )->addOption(
+                'excludeTypes',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Comma separated list of NOT allowed asset types. Available options: ' . implode(', ', Asset::getTypes())
+            )->addOption(
+                'includeExtensions',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Comma separated list of allowed file extensions. Will overrule excludeExtensions.'
+            )->addOption(
+                'excludeExtensions',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Comma separated list of NOT allowed file extensions.'
             );
     }
 
@@ -98,7 +123,7 @@ class AssetImportCommand extends AbstractCommand
         $finder->in($path)->files();
 
         $this->dump(sprintf(
-            'Importing assets from "%s" to "%s".',
+            'Importing assets from "%s" to "%s"',
             $path,
             $this->rootFolderAsset->getFullPath()
         ));
@@ -136,7 +161,7 @@ class AssetImportCommand extends AbstractCommand
 
         } else {
             // Use existing asset
-            $parentAssetPath = $this->rootFolderAsset->getFullPath() . '/' . $parentPath;
+            $parentAssetPath = $this->rootFolderAsset->getFullPath() . '/' . $this->fixInvalidDirectoryPath($parentPath);
             if (Asset\Service::pathExists($parentAssetPath)) {
                 $parentAsset = Asset\Folder::getByPath($parentAssetPath);
 
@@ -182,56 +207,140 @@ class AssetImportCommand extends AbstractCommand
      */
     protected function createAssetFromFile(SplFileInfo $file)
     {
+        // If file is not allowed by include/exclude options
+        if (!$this->isFileAllowed($file)) {
+            $this->deleteOriginalFile($file);
+            return true;
+        }
+
         // If the asset already exists
         $expectedPath = $this->rootFolderAsset->getFullPath() .
             '/' . $file->getRelativePath() . '/' .
             File::getValidFilename($file->getBasename());
-
         if (Asset\Service::pathExists($expectedPath)) {
 
             // Update file contents if enabled
             if ($this->updateAssets) {
                 $asset = Asset::getByPath($expectedPath);
-                $asset->setData($file->getContents());
-                $asset->save();
-
-                $this->dump('Updating existing file "' . $expectedPath . '".');
+                // If asset is allowed by include/exclude options
+                if ($this->isAssetAllowed($asset)) {
+                    // Update
+                    $asset->setData($file->getContents());
+                    $asset->save();
+                    $this->dump('Updating existing file "' . $expectedPath . '".');
+                }
             } else {
                 $this->dump('NOT updating existing file "' . $expectedPath . '".');
             }
 
         // If asset doesn't exist yet
         } else {
-            // Check if parent asset exists
-            $parentAsset = $this->getParentFolderAssetForFile($file);
-            if ($parentAsset === null) {
-                return false;
+            $newAsset = $this->createNewAssetFromFile($file);
+            if ($newAsset !== null) {
+                $this->dump('Imported ' . $newAsset->getType() . ' "' . $file->getRelativePathname() . '" to ' . $newAsset->getFullPath());
             }
-
-            // Create new asset from file
-            $this->dump('Importing file "' . $file->getRelativePathname() . '" to ' .
-                $parentAsset->getFullPath() . '/' . $file->getBasename() . '.');
-            Asset::create($parentAsset->getId(), [
-                'filename'   => File::getValidFilename($file->getBasename()),
-                'sourcePath' => $file->getPathname(),
-                'data'       => $file->getContents(),
-            ], true);
         }
         $this->deleteOriginalFile($file);
-
-        $this->dump('Imported "' . $file->getRelativePathname() . '"');
         return true;
     }
 
     /**
-     * @param string $filename
+     * @param SplFileInfo $file
+     * @return null|Asset
+     * @throws \Exception
+     */
+    protected function createNewAssetFromFile(SplFileInfo $file)
+    {
+        // Check if parent asset exists
+        $parentAsset = $this->getParentFolderAssetForFile($file);
+        if ($parentAsset === null) {
+            throw new \Exception('Unable to find parent folder asset for file ' . $file->getRelativePathname());
+        }
+
+        // Create new asset from file
+        $newAsset = Asset::create($parentAsset->getId(), [
+            'filename'   => File::getValidFilename($file->getBasename()),
+            'sourcePath' => $file->getPathname(),
+            'data'       => $file->getContents(),
+        ], false);
+
+        // If asset is allowed by include/exclude options
+        if ($this->isAssetAllowed($newAsset)) {
+            // Save it
+            $newAsset->save();
+            return $newAsset;
+        }
+        // Otherwise delete it
+        $newAsset->delete();
+        return null;
+    }
+
+    /**
+     * @param SplFileInfo $file
+     * @return bool
+     */
+    protected function isFileAllowed(SplFileInfo $file)
+    {
+        $isAllowed = $this->checkIncludeExcludeOptions($file->getExtension(), 'includeExtensions', 'excludeExtensions');
+        if (!$isAllowed) {
+            $this->dump('File extension for ' . $file->getRelativePathname() . ' is not allowed.');
+        }
+        return $isAllowed;
+    }
+
+    /**
+     * @param Asset $asset
+     * @return bool
+     */
+    protected function isAssetAllowed(Asset $asset)
+    {
+        $isAllowed = $this->checkIncludeExcludeOptions($asset->getType(), 'includeTypes', 'excludeTypes');
+        if (!$isAllowed) {
+
+            $this->dump('Asset ' . $asset->getFullPath() . ' of type ' . $asset->getType() . ' is not allowed.');
+        }
+        return $isAllowed;
+    }
+
+    /**
+     * @param string $value
+     * @param string $includeOption
+     * @param string $excludeOption
+     * @return bool
+     */
+    protected function checkIncludeExcludeOptions($value, $includeOption, $excludeOption)
+    {
+        $isAllowed = true;
+        foreach ([$includeOption, $excludeOption] as $option) {
+            // If include option is not configured check exclude option
+            if (empty($this->includeExcludeOptions[$option])) {
+                continue;
+            }
+            // Check if the value matches one of the configured option values
+            $isAllowed = in_array(strtolower($value), $this->includeExcludeOptions[$option]);
+
+            // Negate exclude option
+            if ($option === $excludeOption) {
+                $isAllowed = !$isAllowed;
+            }
+            // Include option overrules exclude option
+            break;
+        }
+
+        return $isAllowed;
+    }
+
+    /**
+     * @param string $path
      * @return string
      */
-    protected function fixInvalidDirectoryName($filename)
+    protected function fixInvalidDirectoryPath($path)
     {
+        $basename = basename($path);
         // Remove numeric duplicate indicator from directory name. For example: dirname (1)
-        $filename = preg_replace('/\([0-9]+\)/', '', $filename);
-        return File::getValidFilename($filename);
+        $fixedBasename = preg_replace('/\([0-9]+\)/', '', $basename);
+        $fixedBasename = File::getValidFilename($fixedBasename);
+        return str_replace($basename, $fixedBasename, $path);
     }
 
     /**
@@ -260,6 +369,21 @@ class AssetImportCommand extends AbstractCommand
             if ($batchSize > 0) {
                 $this->batchSize = $batchSize;
             }
+        }
+
+        $includeExcludeOptions = [
+            'includeTypes',
+            'excludeTypes',
+            'includeExtensions',
+            'excludeExtensions',
+        ];
+        foreach ($includeExcludeOptions as $option) {
+            if (!$this->input->hasOption($option)) {
+                $this->includeExcludeOptions[$option] = [];
+                continue;
+            }
+            $optionValue = strtolower($this->input->getOption($option));
+            $this->includeExcludeOptions[$option] = $this->trimExplode(',', $optionValue, true);
         }
     }
 
