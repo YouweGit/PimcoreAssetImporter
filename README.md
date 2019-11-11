@@ -1,22 +1,15 @@
 # Pimcore asset importer
 
-Import assets including (sub)directories to Pimcore 5 via the command line.
+Import assets including (sub)directories to Pimcore 5 or 6 via the command line.
 
 ## Requirements
 
-Pimcore 5
+Pimcore 5 or 6
 
 ## Installation
 
 ```bash
 composer require youwe/pimcore-asset-importer:~1.0
-```
-
-Latest version from the repository:
-
-```bash
-composer config repositories.pimcore-asset-importer vcs https://github.com/YouweGit/PimcoreAssetImporter.git
-composer require youwe/pimcore-asset-importer:dev-master
 ```
 
 ## Usage
