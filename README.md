@@ -9,7 +9,7 @@ Pimcore 5 or 6
 ## Installation
 
 ```bash
-composer require youwe/pimcore-asset-importer:~1.0
+composer require youwe/pimcore-asset-importer:~1.1
 ```
 
 ## Usage
