@@ -9,7 +9,7 @@ class YouwePimcoreAssetImporterBundle extends AbstractPimcoreBundle
 {
     use PackageVersionTrait;
 
-    protected function getComposerPackageName()
+    protected function getComposerPackageName(): string
     {
         return 'youwe/pimcore-asset-importer';
     }
